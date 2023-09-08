@@ -29,7 +29,7 @@ def options():
     #parser.add_argument('--face_det_batch_size', type=int, help='Batch size for face detection', default=4)
     parser.add_argument('--face_det_batch_size', type=int, help='Batch size for face detection', default=32)
     #parser.add_argument('--LNet_batch_size', type=int, help='Batch size for LNet', default=16)
-    parser.add_argument('--LNet_batch_size', type=int, help='Batch size for LNet', default=128)
+    parser.add_argument('--LNet_batch_size', type=int, help='Batch size for LNet', default=64)
     parser.add_argument('--img_size', type=int, default=384)
     parser.add_argument('--crop', nargs='+', type=int, default=[0, -1, 0, -1], 
                         help='Crop video to a smaller region (top, bottom, left, right). Applied after resize_factor and rotate arg. ' 
