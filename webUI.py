@@ -152,4 +152,4 @@ with gradio.Blocks(
 
     btn.click(fn=convert, inputs=[seg, v, a], outputs=[o])
 
-demo.queue().launch(server_name="0.0.0.0",server_port="8050")
+demo.queue().launch(server_name="0.0.0.0",server_port=8050)
