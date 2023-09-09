@@ -211,6 +211,10 @@ def main():
         instance.setup()
 
     kp_extractor = KeypointExtractor()
+
+    # 创建一个GPU上的cv2.cuda_GpuMat对象
+    resizer = cv2.cuda.createResizer()
+
     for i, (img_batch, mel_batch, frames, coords, img_original, f_frames) in enumerate(tqdm(gen, desc='[Step 6] Lip Synthesis:', total=int(np.ceil(float(len(mel_chunks)) / args.LNet_batch_size)))):
         img_batch = torch.FloatTensor(np.transpose(img_batch, (0, 3, 1, 2))).to(device)
         mel_batch = torch.FloatTensor(np.transpose(mel_batch, (0, 3, 1, 2))).to(device)
@@ -245,7 +249,12 @@ def main():
         torch.cuda.empty_cache()
         for p, f, xf, c in zip(pred, frames, f_frames, coords):
             y1, y2, x1, x2 = c
-            p = cv2.cuda.resize(p.astype(np.uint8), (x2 - x1, y2 - y1))
+
+            p_resize_target = (x2 - x1, y2 - y1)
+
+            # 在cuda设备处理图像
+            p = cv2_cuda_resize_handler(p, p_resize_target, resizer)
+            # p = cv2.resize(p.astype(np.uint8), (x2 - x1, y2 - y1))
             
             ff = xf.copy() 
             ff[y1:y2, x1:x2] = p
@@ -257,12 +266,20 @@ def main():
             mm = [0,   0,   0,   0,   0,   0,   0,   0,   0,  0, 255, 255, 255, 0, 0, 0, 0, 0, 0]
             mouse_mask = np.zeros_like(restored_img)
             tmp_mask = enhancer.faceparser.process(restored_img[y1:y2, x1:x2], mm)[0]
-            mouse_mask[y1:y2, x1:x2] = cv2.cuda.resize(tmp_mask, (x2 - x1, y2 - y1))[:, :, np.newaxis] / 255.
+
+            # 在cuda设备处理图像
+            tmp_mask = cv2_cuda_resize_handler(tmp_mask, (x2 - x1, y2 - y1), resizer)
+
+            mouse_mask[y1:y2, x1:x2] = tmp_mask[:, :, np.newaxis] / 255.
+            # mouse_mask[y1:y2, x1:x2]= cv2.resize(tmp_mask, (x2 - x1, y2 - y1))[:, :, np.newaxis] / 255.
 
             height, width = ff.shape[:2]
             restored_img, ff, full_mask = [cv2.resize(x, (512, 512)) for x in (restored_img, ff, np.float32(mouse_mask))]
             img = Laplacian_Pyramid_Blending_with_mask(restored_img, ff, full_mask[:, :, 0], 10)
-            pp = np.uint8(cv2.cuda.resize(np.clip(img, 0 ,255), (width, height)))
+            # 在CUDA设配上处理图像
+            img = cv2_cuda_resize_handler(np.clip(img, 0 ,255), (width, height), resizer)
+            pp = np.uint8(img)
+            # pp = np.uint8(cv2.resize(np.clip(img, 0 ,255), (width, height)))
 
             # pp, orig_faces, enhanced_faces = enhancer.process(pp, xf, bbox=c, face_enhance=False, possion_blending=True)
             pp, orig_faces, enhanced_faces = enhancer.process(pp, xf, bbox=c, face_enhance=True, possion_blending=True)
@@ -274,6 +291,19 @@ def main():
     command = 'ffmpeg -loglevel error -y -i {} -i {} -strict -2 -q:v 1 {}'.format(args.audio, 'temp/{}/result.mp4'.format(args.tmp_dir), args.outfile)
     subprocess.call(command, shell=platform.system() != 'Windows')
     print('outfile:', args.outfile)
+
+
+def cv2_cuda_resize_handler(p, p_resize_target, resizer):
+    # 创建一个CV2的操作
+    cv2_cuda = cv2.cuda.createCudaMem()
+    # 将图像传输到GPU上
+    p = p.astype(np.uint8)
+    cv2_cuda.upload(p)
+    # 在cuda上进行cv2 resize操作
+    output_image_cuda = resizer.resize(cv2_cuda, p_resize_target)
+    # 将图像下载回来
+    p = output_image_cuda.download()
+    return p
 
 
 # frames:256x256, full_frames: original size
